@@ -1,0 +1,5 @@
+server
+player
+test_frame
+*.o
+*.out
