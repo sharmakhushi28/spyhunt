@@ -1,26 +1,22 @@
 #include "communication.h"
-#include <poll.h>
 #include <iostream>
 
 int main() {
-    int s = socket(AF_UNIX, SOCK_STREAM, 0);
-    sockaddr_un a{};
-    a.sun_family = AF_UNIX;
-    strncpy(a.sun_path, "/tmp/spyhunt/spyhunt.sock", sizeof(a.sun_path) - 1);
-    if (connect(s, (sockaddr*)&a, sizeof a) < 0) { perror("connect"); return 1; }
+    spy::Client c;
+    if (!c.connect_to("/tmp/spyhunt/spyhunt.sock")) { perror("connect"); return 1; }
     printf("================================\n           SPY HUNT\n================================\n");
 
-    pollfd fds[2] = {{0, POLLIN, 0}, {s, POLLIN, 0}};
     while (true) {
-        poll(fds, 2, -1);
-        if (fds[0].revents & POLLIN) {
+        int ev = c.wait();
+
+        if (ev & spy::Client::KEYBOARD) {
             std::string line;
             if (!std::getline(std::cin, line)) break;
-            spy::send_msg(s, {"CHAT", line});
+            c.send({"CHAT", line});
         }
-        if (fds[1].revents & POLLIN) {
+        if (ev & spy::Client::SERVER) {
             spy::Message m;
-            if (!spy::recv_msg(s, m)) { printf("server closed\n"); break; }
+            if (!c.recv(m)) { printf("server closed\n"); break; }
             if (m.type == "ROLE")
                 printf("\n>>> YOUR SECRET ROLE: %s <<<\n\n", m.text.c_str());
             else if (m.type == "RESULT")

@@ -1,3 +1,4 @@
+// communication.h - Spy Hunt communications library (single file)
 #pragma once
 #include <sys/socket.h>
 #include <sys/epoll.h>
@@ -6,6 +7,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -72,6 +74,7 @@ inline bool recv_msg(int fd, Message& m) {
     return true;
 }
 
+// ---------- Server side ----------
 struct Peer {
     int fd = -1;
     uid_t uid = 0;
@@ -188,4 +191,55 @@ private:
     }
 };
 
-} 
+// ---------- Client side ----------
+class Client {
+public:
+    enum Event { NONE = 0, KEYBOARD = 1, SERVER = 2 };
+
+    ~Client() { close_conn(); }
+
+    // Connect to the server's UNIX socket.
+    bool connect_to(const char* path) {
+        fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd < 0) return false;
+        sockaddr_un a{};
+        a.sun_family = AF_UNIX;
+        strncpy(a.sun_path, path, sizeof(a.sun_path) - 1);
+        if (::connect(fd, (sockaddr*)&a, sizeof a) < 0) {
+            int e = errno;
+            ::close(fd);
+            fd = -1;
+            errno = e;
+            return false;
+        }
+        return true;
+    }
+
+    // Send one message to the server.
+    bool send(const Message& m) { return send_msg(fd, m); }
+
+    // Receive one message from the server. False means the server closed.
+    bool recv(Message& m) { return recv_msg(fd, m); }
+
+    // Wait until the keyboard (stdin) or the server socket is ready.
+    // Returns a bitmask of KEYBOARD and/or SERVER (NONE on timeout).
+    // This is what lets server messages arrive while the player is idle.
+    int wait(int timeout_ms = -1) {
+        pollfd fds[2] = {{0, POLLIN, 0}, {fd, POLLIN, 0}};
+        int r = ::poll(fds, 2, timeout_ms);
+        if (r <= 0) return NONE;
+        int ev = NONE;
+        if (fds[0].revents & (POLLIN | POLLHUP)) ev |= KEYBOARD;
+        if (fds[1].revents & (POLLIN | POLLHUP)) ev |= SERVER;
+        return ev;
+    }
+
+    void close_conn() {
+        if (fd >= 0) { ::close(fd); fd = -1; }
+    }
+
+private:
+    int fd = -1;
+};
+
+} // namespace spy
