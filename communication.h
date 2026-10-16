@@ -134,6 +134,10 @@ public:
         return it == peers.end() ? nullptr : &it->second;
     }
 
+    void kick(int fd) {
+        if (peers.count(fd)) drop(fd);
+    }
+
 private:
     int lfd = -1, ep = -1;
 
